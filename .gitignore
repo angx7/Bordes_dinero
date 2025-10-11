@@ -7,4 +7,6 @@ __pycache__/
 clahe.py
 test.py
 main.py
-resultado.png
+
+
+.DS_Store

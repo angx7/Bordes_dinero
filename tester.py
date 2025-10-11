@@ -1,4 +1,4 @@
-#!/usr.bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Conteo de monedas en imagen con:
@@ -14,12 +14,18 @@ import cv2
 import numpy as np
 from pathlib import Path
 
-
 # ---------------------- utilidades ----------------------
 
 
 def fourier_highpass(img_gray: np.ndarray, cutoff: int) -> np.ndarray:
-    """Filtro pasa-altas ideal en el dominio de Fourier para realzar bordes."""
+    """
+    Aplica un filtro pasa-altas ideal en el dominio de Fourier para realzar bordes.
+    Args:
+        img_gray (np.ndarray): Imagen en escala de grises.
+        cutoff (int): Radio de corte para bajas frecuencias.
+    Returns:
+        np.ndarray: Imagen filtrada.
+    """
     h, w = img_gray.shape
     f = np.fft.fft2(img_gray)
     fshift = np.fft.fftshift(f)
@@ -42,7 +48,15 @@ def fourier_highpass(img_gray: np.ndarray, cutoff: int) -> np.ndarray:
 
 
 def nms_circles(circles, center_thr_rel=0.60, radius_thr_rel=0.35):
-    """Non-Maximum Suppression para círculos."""
+    """
+    Non-Maximum Suppression para círculos detectados.
+    Args:
+        circles (list): Lista de círculos (x, y, r).
+        center_thr_rel (float): Umbral relativo para centros.
+        radius_thr_rel (float): Umbral relativo para radios.
+    Returns:
+        list: Círculos filtrados.
+    """
     circles = sorted(circles, key=lambda t: t[2], reverse=True)
     keep = []
     for x, y, r in circles:
@@ -60,7 +74,16 @@ def nms_circles(circles, center_thr_rel=0.60, radius_thr_rel=0.35):
 
 
 def hough_sweep(gray, H, W, target=None):
-    """Barrido adaptativo de parámetros de HoughCircles."""
+    """
+    Barrido adaptativo de parámetros para HoughCircles.
+    Args:
+        gray (np.ndarray): Imagen en escala de grises.
+        H (int): Alto de la imagen.
+        W (int): Ancho de la imagen.
+        target (int, opcional): Número objetivo de objetos.
+    Returns:
+        list: Círculos detectados.
+    """
     rmin = max(8, int(0.045 * H))
     rmax = int(0.20 * H)
 
@@ -100,8 +123,12 @@ def hough_sweep(gray, H, W, target=None):
 
 def clasificar_por_radiokmeans(radii: np.ndarray, k: int = 4):
     """
-    K-Means con OpenCV sobre radios.
-    Devuelve labels_ranked (0=más chico) y centers_sorted.
+    Clasifica los radios usando K-Means con OpenCV.
+    Args:
+        radii (np.ndarray): Array de radios.
+        k (int): Número de clusters.
+    Returns:
+        tuple: (labels_ranked, centers_sorted, k)
     """
     if len(radii) == 0:
         return None, None, 0
@@ -123,6 +150,9 @@ def clasificar_por_radiokmeans(radii: np.ndarray, k: int = 4):
 
 
 def main():
+    """
+    Script principal para el conteo y clasificación de monedas en una imagen.
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--img", required=True, help="Ruta de la imagen (e.g., dineros.webp)"
@@ -162,21 +192,10 @@ def main():
     radii = np.array([r for (_, _, r) in circles], dtype=np.float32)
     labels_ranked, centers_sorted, k_eff = clasificar_por_radiokmeans(radii, k=4)
 
-    # *** Mapeo Estricto Basado en Tamaño Físico Real ***
-    # K-Means devuelve los clusters ordenados por tamaño (rank 0, 1, 2, 3),
-    # donde 0 es el más pequeño.
     # Mapeo físico: R_0=$1 < R_1=$2 < R_2=$10 < R_3=$5
-
-    # Definición de la asignación basada en el rank (0=chico, 3=grande)
-    # Si k_eff < 4, el último elemento de la lista será el que se use como fallback.
-
-    # Mapeo de Rango de K-Means (0..3) a la Denominación Real:
     DENOM_MAP = {0: "1 Peso", 1: "2 Pesos", 2: "10 Pesos", 3: "5 Pesos"}
     VALUE_MAP = {0: 1, 1: 2, 2: 10, 3: 5}
-    # Colores: Verde (1P), Azul (2P), Amarillo (10P), Rojo (5P)
     COLOR_MAP = {0: (0, 255, 0), 1: (255, 0, 0), 2: (0, 255, 255), 3: (0, 0, 255)}
-
-    # Lista de todas las denominaciones posibles para el resumen final
     all_denoms = ["1 Peso", "2 Pesos", "10 Pesos", "5 Pesos"]
 
     conteo = {d: 0 for d in all_denoms}
@@ -185,14 +204,9 @@ def main():
     if labels_ranked is not None:
         for i, (x, y, r) in enumerate(circles):
             rank = int(labels_ranked[i])
-
-            # Asegurar que el rank no exceda el mapeo, incluso si k_eff < 4
             effective_rank = min(rank, k_eff - 1)
-
-            # Asignación usando el mapa corregido
             current_denom = DENOM_MAP.get(effective_rank, "Desconocido")
             current_value = VALUE_MAP.get(effective_rank, 0)
-
             conteo[current_denom] += 1
             valor_total += current_value
 
@@ -200,7 +214,6 @@ def main():
 
     # ---- SALIDA EN CONSOLA ----
     print("\n--- RESUMEN ---")
-    # Imprimir en el orden tradicional
     for d in all_denoms:
         if d in conteo and conteo[d] > 0:
             print(f"{d}: {conteo[d]}")
@@ -212,26 +225,12 @@ def main():
         out = img.copy()
         for i, (x, y, r) in enumerate(circles):
             color = (255, 255, 255)
-            denom_text = "N/A"
             if labels_ranked is not None:
                 rank = int(labels_ranked[i])
                 effective_rank = min(rank, k_eff - 1)
-
-                # Asignación para el dibujo
                 color = COLOR_MAP.get(effective_rank, (255, 255, 255))
-                denom_text = DENOM_MAP.get(effective_rank, "Desconocido")
-
             cv2.circle(out, (int(x), int(y)), int(r), color, 2)
-            cv2.putText(
-                out,
-                denom_text,
-                (int(x - r), int(y - r - 2)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.45,
-                color,
-                1,
-                cv2.LINE_AA,
-            )
+            # Se elimina la etiqueta de texto sobre cada objeto
         cv2.putText(
             out,
             f"Objetos: {total_objetos}",
